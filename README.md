@@ -300,7 +300,7 @@ from config import ResearchConfig
 
 # Create custom configuration
 custom_config = ResearchConfig(
-    model="gemini-2.0-flash-exp",
+    model="gemini-3-pro-preview",
     temperature=0.2,
     min_word_count=600,        # More detailed sections
     min_sources=4,              # More sources required
@@ -353,7 +353,7 @@ MAX_ITERATIONS = 8        # Maximum research iterations
 
 ### Built With
 - **Google ADK**: Agent orchestration and state management
-- **Gemini 2.0 Flash**: Advanced reasoning and research
+- **Gemini 3 Pro**: Advanced reasoning and research
 - **BuiltInPlanner**: Extended thinking for complex analysis
 - **Google Search Tool**: Multi-source information gathering
 
