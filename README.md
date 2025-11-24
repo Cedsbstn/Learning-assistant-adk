@@ -109,12 +109,20 @@ The agent tracks these metrics for each section:
 ### Prerequisites
 
 ```bash
+# Use a virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate   # On Windows: venv\Scripts\activate
+
 # Python 3.10+
 python --version
 
 # Install dependencies
-pip install google-generativeai google-adk python-dotenv
-```
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Update the .env file with your Google API key
+nano .env
 
 ### Configuration
 
