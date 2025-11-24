@@ -18,12 +18,13 @@ import os
 import re
 import json
 import google.generativeai as genai
+import google.genai.types as genai_types
 
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 from google.adk.apps.app import App
-from google.adk.agents import agent as LLmAgent, SequentialAgent, Agent
+from google.adk.agents import Agent as LLmAgent, Agent
 from google.adk.events import Event, EventActions
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
@@ -31,7 +32,7 @@ from google.adk.tools import google_search, ToolContext
 from google.adk.runners import Runner
 from google.adk.planners import BuiltInPlanner as BuiltinReasoner
 from google.adk.sessions import InMemorySessionService, Session
-from google.genai.types import HarmBlockThreshold, HarmCategory, types as genai_types
+from google.genai.types import HarmBlockThreshold, HarmCategory
 
 from config import (
     DEFAULT_CONFIG,
@@ -42,6 +43,8 @@ from config import (
 load_dotenv()
 
 # --- Configuration Loading ---
+
+
 def _clone_config(config: ResearchConfig) -> ResearchConfig:
     """Create a copy of the provided config to avoid accidental mutation."""
     return ResearchConfig.from_dict(config.to_dict())
@@ -84,12 +87,17 @@ else:
 # --- Configure Gemini Settings ---
 model = ACTIVE_CONFIG.model
 temperature = ACTIVE_CONFIG.temperature  # Low temperature for factual accuracy
-safety_settings = {  # Adjust harm block thresholds as needed
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
+max_thoughts = ACTIVE_CONFIG.max_thoughts  # Max thoughts for reasoning agents
+
+if ACTIVE_CONFIG.enable_safety:
+    safety_settings = {  # Adjust harm block thresholds as needed
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+else:
+    safety_settings = None
 
 # --- Research Quality Configuration ---
 MIN_WORD_COUNT = ACTIVE_CONFIG.min_word_count
@@ -477,10 +485,10 @@ def generate_markdown_output(callback_context: CallbackContext) -> genai_types.C
 # --- Agent Definitions --- #
 
 curriculum_planner = LLmAgent(
-    name="Curriculum Planner",
+    name="curriculum_planner",
     model=model,
     description="Creates a comprehensive curriculum outline with iterative depth exploration.",
-    instructions="""
+    instruction="""
     You are an expert Curriculum Planner tasked with creating a comprehensive learning pathway.
     
     **YOUR MISSION:**
@@ -524,21 +532,17 @@ curriculum_planner = LLmAgent(
     Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
     """,
     tools=[google_search],
-    temperature=temperature,
-    safety_settings=safety_settings,
     output_key="curriculum_outline",
-    before_callbacks=[initialize_research_state],
-    after_callbacks=[research_sources, extract_curriculum_sections],
+    before_model_callback=[initialize_research_state],
+    after_model_callback=[research_sources, extract_curriculum_sections],
 )
 
 knowledge_gap_analyzer = LLmAgent(
-    name="Knowledge Gap Analyzer",
+    name="knowledge_gap_analyzer",
     model=model,
-    reasoner=BuiltinReasoner(
-        thinking=genai_types.ThinkingConfig(include_thoughts=True)
-    ),
+    planner=BuiltinReasoner(thinking_config={"max_thoughts": max_thoughts}),
     description="Identifies gaps in the curriculum and prioritizes areas needing deeper research.",
-    instructions="""
+    instruction="""
     You are a Knowledge Gap Analyzer. Your role is to critically evaluate the curriculum outline
     and identify areas that require deeper exploration.
     
@@ -560,20 +564,15 @@ knowledge_gap_analyzer = LLmAgent(
     Return as a structured list with priority levels (High/Medium/Low) for each gap.
     Group gaps by curriculum section for targeted research.
     """,
-    temperature=0.3,
-    safety_settings=safety_settings,
     output_key="knowledge_gaps_analysis",
 )
 
 section_researcher = LLmAgent(
-    name="Deep Section Researcher",
+    name="deep_section_researcher",
     model=model,
-    reasoner=BuiltinReasoner(
-        thinking=genai_types.ThinkingConfig(include_thoughts=True)
-    ),
+    planner=BuiltinReasoner(thinking_config={"max_thoughts": max_thoughts}),
     description="Conducts rigorous, iterative research on curriculum sections with depth tracking.",
-    temperature=0.2,
-    instructions="""
+    instruction="""
     You are a Deep Section Researcher conducting rigorous, comprehensive research.
     
     **RESEARCH METHODOLOGY:**
@@ -610,20 +609,17 @@ section_researcher = LLmAgent(
     **CURRENT SECTION FOCUS:** Pay special attention to the current_section in state.
     """.format(min_words=MIN_WORD_COUNT, min_sources=MIN_SOURCES),
     tools=[google_search],
-    safety_settings=safety_settings,
     output_key="section_research",
-    after_callbacks=[research_sources,
-                     track_explored_topics, assess_knowledge_depth],
+    after_model_callback=[research_sources,
+                          track_explored_topics, assess_knowledge_depth],
 )
 
 iterative_refinement_agent = LLmAgent(
-    name="Iterative Refinement Agent",
+    name="iterative_refinement_agent",
     model=model,
-    reasoner=BuiltinReasoner(
-        thinking=genai_types.ThinkingConfig(include_thoughts=True)
-    ),
+    planner=BuiltinReasoner(thinking_config={"max_thoughts": max_thoughts}),
     description="Evaluates research quality and determines if additional iteration is needed.",
-    instructions="""
+    instruction="""
     You are an Iterative Refinement Agent. Evaluate the research quality and decide if more work is needed.
     
     **EVALUATION CRITERIA:**
@@ -651,16 +647,14 @@ iterative_refinement_agent = LLmAgent(
     
     Be thorough and specific in your recommendations.
     """.format(min_words=MIN_WORD_COUNT, min_sources=MIN_SOURCES, min_completeness=MIN_COMPLETENESS),
-    temperature=0.3,
-    safety_settings=safety_settings,
     output_key="refinement_decision",
 )
 
 report_synthesizer = LLmAgent(
-    name="Report Synthesizer",
+    name="report_synthesizer",
     model=model,
     description="Synthesizes all research into a cohesive, comprehensive report with proper citations.",
-    instructions="""
+    instruction="""
     You are a Report Synthesizer. Compile all researched sections into a masterful, comprehensive report.
     
     **SYNTHESIS GUIDELINES:**
@@ -688,17 +682,15 @@ report_synthesizer = LLmAgent(
     Ensure every factual claim has a citation. The report should be publication-ready.
     Access section_research_map in state to get all researched content by section.
     """,
-    temperature=0.3,
-    safety_settings=safety_settings,
     output_key="final_cited_report",
-    after_callbacks=[citation_replacement],
+    after_model_callback=[citation_replacement],
 )
 
 markdown_generator = LLmAgent(
-    name="Markdown Curriculum Generator",
+    name="markdown_curriculum_report",
     model=model,
     description="Generates the final comprehensive markdown curriculum document.",
-    instructions="""
+    instruction="""
     You are the Markdown Curriculum Generator. Create the final, polished curriculum document.
     
     **YOUR TASK:**
@@ -736,10 +728,8 @@ markdown_generator = LLmAgent(
     
     This is the final output the user will receive - make it exceptional.
     """,
-    temperature=0.3,
-    safety_settings=safety_settings,
     output_key="final_markdown_curriculum",
-    after_callbacks=[generate_markdown_output],
+    after_model_callback=[generate_markdown_output],
 )
 
 
@@ -758,12 +748,21 @@ class IterativeResearchAgent(Agent):
     6. Synthesizing and generating final output
     """
 
+    curriculum_planner: Optional[Agent] = None
+    gap_analyzer: Optional[Agent] = None
+    section_researcher: Optional[Agent] = None
+    refinement_agent: Optional[Agent] = None
+    synthesizer: Optional[Agent] = None
+    markdown_gen: Optional[Agent] = None
+
     def __init__(self, name: str = "CedLM Autonomous Researcher"):
         super().__init__(name=name)
         self.curriculum_planner = curriculum_planner
         self.gap_analyzer = knowledge_gap_analyzer
         self.section_researcher = section_researcher
         self.refinement_agent = iterative_refinement_agent
+        self.synthesizer = report_synthesizer
+        self.markdown_gen = markdown_generator
         self.synthesizer = report_synthesizer
         self.markdown_gen = markdown_generator
 
@@ -1038,8 +1037,9 @@ Be rigorous in your evaluation.
 
 
 # --- Core Agent Instance --- #
-core_agent = IterativeResearchAgent(name="CedLM Autonomous Researcher")
+core_agent = IterativeResearchAgent(name="CedLM_Autonomous_Researcher")
 
-app = App(core_agent=core_agent, name="CedLM Agent")
+app = App(root_agent=core_agent, name="Learning_Agent_ADK")
 
-__all__ = ["core_agent", "ACTIVE_CONFIG", "ACTIVE_CONFIG_NAME", "IterativeResearchAgent"]
+__all__ = ["core_agent", "ACTIVE_CONFIG",
+           "ACTIVE_CONFIG_NAME", "IterativeResearchAgent"]

@@ -26,7 +26,8 @@ if current_dir not in sys.path:
 # Configure logging
 log_file_path = ACTIVE_CONFIG.log_file
 log_dir = os.path.dirname(log_file_path)
-os.makedirs(log_dir, exist_ok=True)
+if log_dir and not os.path.exists(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -145,7 +146,8 @@ async def run_agent(
 
     try:
         # Run the agent (the IterativeResearchAgent handles all iterations internally)
-        response = await runner.run(input=query)
+        response = runner.run(
+            user_id=user_id, new_message=query, session_id=session)
 
         print("\n✅ Research process completed!\n")
 
@@ -206,7 +208,7 @@ async def main():
     print("\n" + "="*80)
     print("🎓 CEDLM AUTONOMOUS DEEP RESEARCH AGENT")
     print("="*80)
-    print("Powered by Google Agent Development Kit & Gemini 2.0")
+    print("Powered by Google Agent Development Kit & Gemini 3 Pro\n")
     print("="*80 + "\n")
     print(f"🛠️ Active research preset: {ACTIVE_CONFIG_NAME}")
     print_config(ACTIVE_CONFIG)
@@ -228,12 +230,13 @@ async def main():
 
     # Initialize session service
     session_service = InMemorySessionService()
-    session = session_service.create_session()
     user_id = f"researcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    session = await session_service.create_session(
+        app_name=core_agent.name, user_id=user_id)
 
     # Run the autonomous research agent
     try:
-        response = await run_agent(
+        await run_agent(
             agent=core_agent,
             query=topic,
             session=session,

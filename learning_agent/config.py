@@ -43,6 +43,9 @@ class ResearchConfig:
     examples_weight: float = 0.8  # % of sections that should have examples
     technical_weight: float = 0.7  # % of sections that should have technical depth
 
+    max_thoughts: int = 5  # Maximum thoughts per section per iteration
+    enable_safety: bool = True  # Enable safety checks during research
+
     # Output Configuration
     output_dir: str = "output"
     enable_logging: bool = True
@@ -64,6 +67,8 @@ class ResearchConfig:
             "sections_per_iteration": self.sections_per_iteration,
             "examples_weight": self.examples_weight,
             "technical_weight": self.technical_weight,
+            "max_thoughts": self.max_thoughts,
+            "enable_safety": self.enable_safety,
             "output_dir": self.output_dir,
             "enable_logging": self.enable_logging,
             "log_file": self.log_file,
@@ -92,6 +97,9 @@ class ResearchConfig:
 
         if not (0 <= self.temperature <= 2):
             raise ValueError("temperature must be between 0 and 2")
+
+        if self.max_thoughts < 1:
+            raise ValueError("max_thoughts must be at least 1")
 
         return True
 
@@ -177,14 +185,21 @@ def print_config(config: ResearchConfig) -> None:
     print("="*80)
     print(f"Model: {config.model}")
     print(f"Temperature: {config.temperature}")
+    print(f"Max Thoughts (Planner): {config.max_thoughts}")
+    print(
+        f"Safety Settings: {'Enabled' if config.enable_safety else 'Disabled'}")
     print(f"\n📊 Quality Standards:")
     print(f"  - Min Words/Section: {config.min_word_count}")
     print(f"  - Min Sources/Section: {config.min_sources}")
     print(f"  - Min Completeness: {config.min_completeness}%")
+    print(f"  - Examples Weight: {config.examples_weight * 100}%")
+    print(f"  - Technical Weight: {config.technical_weight * 100}%")
     print(f"\n🔄 Iteration Control:")
     print(f"  - Max Iterations: {config.max_iterations}")
     print(f"  - Sections/Iteration: {config.sections_per_iteration}")
     print(f"\n📁 Output:")
     print(f"  - Directory: {config.output_dir}")
     print(f"  - Log File: {config.log_file}")
+    print(f"  - Logging: {'Enabled' if config.enable_logging else 'Disabled'}")
+    print(f"  - Verbose: {'Yes' if config.verbose else 'No'}")
     print("="*80 + "\n")
