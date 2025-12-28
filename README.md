@@ -228,13 +228,13 @@ The agent generates three files in the `output/` directory:
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                    CEDLM AUTONOMOUS RESEARCHER v2.0                           ║
+║                    Learning Agent v2.0                           ║
 ║           Rigorous Iterative Research Until Deep Understanding                ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 📋 Topic: Machine Learning Transformers
 
-🚀 CEDLM AUTONOMOUS RESEARCHER
+🚀LEARNING AGENT
 📋 Research Topic: Machine Learning Transformers
 ⏰ Started: 2025-11-20 14:30:00
 
@@ -308,7 +308,7 @@ Max iterations: 8
 
 ### Customize Research Parameters
 
-Edit `cedlm/agents/config.py`:
+Edit `learning_agent/config.py`:
 
 ```python
 from config import ResearchConfig
