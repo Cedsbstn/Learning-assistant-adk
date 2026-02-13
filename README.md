@@ -1,14 +1,14 @@
-# Learning Agent ADK: Autonomous Deep Research Agent
+# Learning Agent ADK: Develop Learning Material Through Command Line using Improved Deep Research Agent
 
 **Powered by Google Agent Development Kit (ADK) & Gemini 3 Pro**
 
-> **Truly Autonomous Rigorous Researcher that Iteratively Explores Topics Until Deep Understanding is Reached**
+> **Truly Helpful Researcher that Iteratively Explores the Requested Topics Until Depth Understanding is Reached**
 
 ## 🎯 Overview
 
-Learning Agent ADK is a **fully autonomous research agent** that performs rigorous, iterative deep research on any topic and generates comprehensive markdown curriculum documents. The agent **autonomously decides** when to continue researching based on quality metrics until deep understanding is achieved.
+Learning Agent ADK is a **Improved Deep Research Agent** that performs rigorous, iterative deep research on any topic and generates comprehensive markdown curriculum through the command line. The agent **autonomously decides** when to continue researching based on quality metrics until depth understanding is achieved.
 
-### What Makes It Truly Autonomous?
+### What Makes It Truly Helpful?
 
 - 🔄 **Dynamic Iteration**: Continues researching until quality standards are met (not fixed iterations)
 - 🎯 **Section-by-Section Research**: Identifies and researches specific curriculum sections
@@ -142,7 +142,7 @@ python main.py
 
 **Command Line Mode:**
 ```bash
-python main.py "Your Research Topic"
+python main.py "Your Curriculum Topic"
 ```
 
 **Examples:**
