@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Agent Definitions and LLM Pipeline Stages for Kythe Autonomous Deep Research Agent.
+Agent Definitions and LLM Pipeline Stages for Kythe Agentic Deep Research Agent.
 
 Exposes discrete single-section callable stages for the RunOrchestrator control plane,
 with strict antislop prompting and backward-compatible SequentialAgent definitions.
@@ -931,7 +931,7 @@ markdown_generator = LlmAgent(
 
 research_pipeline = SequentialAgent(
     name="Research_Pipeline",
-    description="Orchestrates the autonomous research workflow",
+    description="Orchestrates the agentic research workflow",
     sub_agents=[
         curriculum_planner,
         section_researcher,

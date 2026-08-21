@@ -13,10 +13,10 @@
 # limitations under the License.
 
 """
-Main entry point and CLI command router for Kythe Autonomous Deep Research Agent.
+Main entry point and CLI command router for Kythe Agentic Deep Research Agent.
 
 Supports subcommands:
-- research: Start a new autonomous research run with outline review
+- research: Start a new agentic research run with outline review
 - resume: Resume an interrupted or paused run by run_id
 - status: Inspect run progress, section scores, and open gaps
 - list-runs: List all research runs and their statuses
@@ -106,7 +106,7 @@ def cmd_research(args: argparse.Namespace) -> None:
         config.export_formats = [f.strip() for f in args.formats.split(",") if f.strip()]
 
     print("\n" + "=" * 80)
-    print("KYTHE AUTONOMOUS DEEP RESEARCH")
+    print("KYTHE AGENTIC DEEP RESEARCH")
     print("=" * 80)
     print(f"Topic: '{topic}'")
     print(f"Active Preset: {args.preset or ACTIVE_CONFIG_NAME}")
@@ -131,7 +131,7 @@ def cmd_research(args: argparse.Namespace) -> None:
         print("[INFO] Auto-approving generated outline per configuration.")
         orch.approve_outline(run_id)
 
-    print("\n[LOOP] Starting autonomous iterative research control loop...")
+    print("\n[LOOP] Starting agentic iterative research control loop...")
     final_status = orch.run_until_terminal(run_id, on_progress=cli_progress_handler)
 
     _print_completion_summary(orch, run_id)
@@ -282,7 +282,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     """Construct argument parser with subcommands and default aliases."""
     parser = argparse.ArgumentParser(
         prog="kythe",
-        description="Kythe: Autonomous Section-by-Section Deep Research Agent",
+        description="Kythe: Agentic Section-by-Section Deep Research Agent",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 

@@ -1,4 +1,4 @@
-# Kythe: Autonomous Deep Research and Curriculum Engine
+# Kythe: Agentic Deep Research and Curriculum Engine
 
 Kythe decomposes technical topics into structured curriculum sections, gathers web evidence using a protected deep reader, evaluates section drafts against deterministic quality gates, and exports learning dossiers in multiple formats.
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Data models and typed definitions for the Kythe Autonomous Deep Research Agent.
+Data models and typed definitions for the Kythe Agentic Deep Research Agent.
 """
 
 from __future__ import annotations

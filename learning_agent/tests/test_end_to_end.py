@@ -11,7 +11,7 @@ from tests.test_orchestrator import MockLLMProvider, mock_search
 
 def test_complete_end_to_end_research_lifecycle(tmp_path):
     """
-    End-to-end acceptance test for Kythe Autonomous Deep Research Agent:
+    End-to-end acceptance test for Kythe Agentic Deep Research Agent:
     - AC-01: Modular section work-item model
     - AC-02: Quality gate enforcement and gap closing
     - AC-03: Multi-pass retry bounds and exhaustion handling

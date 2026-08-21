@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Deep Reader & Safe Evidence Pipeline for Kythe Autonomous Deep Research Agent.
+Deep Reader & Safe Evidence Pipeline for Kythe Agentic Deep Research Agent.
 
 Includes SSRF-safe HTTP fetching, URL canonicalization, streaming size limits,
 BeautifulSoup HTML extraction, semantic chunking, and SQLite content caching.

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Tools and Output Utilities for Kythe Autonomous Deep Research Agent.
+Tools and Output Utilities for Kythe Agentic Deep Research Agent.
 
 Provides output writers, summary formatters, and export integrations.
 """

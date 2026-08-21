@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-SQLite Persistence Layer for Kythe Autonomous Deep Research Agent.
+SQLite Persistence Layer for Kythe Agentic Deep Research Agent.
 
 Implements durable state, explicit schema migrations, transaction safety,
 and granular repositories for all research entities.

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Interactive CLI & Outline Review UI for Kythe Autonomous Deep Research Agent.
+Interactive CLI & Outline Review UI for Kythe Agentic Deep Research Agent.
 
 Provides argument parsing, interactive outline customization, progress reporting,
 and subcommand handlers (research, resume, status, list-runs, export).
@@ -107,7 +107,7 @@ def interactive_outline_review(
 
         if choice in ("1", "a", "approve", "y", "yes"):
             orchestrator.approve_outline(run_id, edits=section_data)
-            print("\n[OK] Outline approved. Starting autonomous research.\n")
+            print("\n[OK] Outline approved. Starting agentic research.\n")
             return True
 
         elif choice in ("q", "quit", "exit"):

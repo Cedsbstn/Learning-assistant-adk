@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Deterministic Quality Evaluator for Kythe Autonomous Deep Research Agent.
+Deterministic Quality Evaluator for Kythe Agentic Deep Research Agent.
 
 Evaluates section depth, per-section evidence, source domain diversity,
 practical examples, technical depth, citation coverage, and antislop compliance.

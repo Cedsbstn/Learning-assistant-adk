@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Run Orchestrator and Control Plane for Kythe Autonomous Deep Research Agent.
+Run Orchestrator and Control Plane for Kythe Agentic Deep Research Agent.
 
 Implements the section-by-section state machine, pass scheduling, closed-loop
 quality gating, crash recovery, and rich export orchestration.

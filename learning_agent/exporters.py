@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Rich Exporters for Kythe Autonomous Deep Research Agent.
+Rich Exporters for Kythe Agentic Deep Research Agent.
 
 Implements generation for:
 - Canonical Markdown (.md)

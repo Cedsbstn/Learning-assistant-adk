@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Configuration module for Kythe Autonomous Deep Research Agent.
+Configuration module for Kythe Agentic Deep Research Agent.
 
 Defines research quality parameters, deep reader constraints, deterministic
 gates, antislop filtering rules, and export specifications.
