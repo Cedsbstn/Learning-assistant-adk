@@ -1,326 +1,380 @@
-from agent import core_agent, ACTIVE_CONFIG, ACTIVE_CONFIG_NAME
-from tools import (
-    save_markdown_curriculum,
-    save_research_metadata,
-    print_research_summary,
-    create_quick_reference
-)
-from google.adk.sessions import Session, InMemorySessionService
-from google.adk.runners import Runner
-from google.genai import types
-from google.genai.types import Content, Part
-from google.adk.agents import Agent
+# Copyright 2026 Cedric Sebastian
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Main entry point and CLI command router for Kythe Autonomous Deep Research Agent.
+
+Supports subcommands:
+- research: Start a new autonomous research run with outline review
+- resume: Resume an interrupted or paused run by run_id
+- status: Inspect run progress, section scores, and open gaps
+- list-runs: List all research runs and their statuses
+- export: Re-generate or render specific learning export formats
+"""
+
+from __future__ import annotations
+
+import argparse
 import asyncio
-import sys
-import os
 import logging
-from datetime import datetime
+import os
+import signal
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
-from config import print_config
+from agent import ACTIVE_CONFIG, ACTIVE_CONFIG_NAME, core_agent
+from cli import cli_progress_handler, interactive_outline_review
+from config import DEFAULT_CONFIG, ResearchConfig, get_config_by_name, print_config
+from models import RunStatus
+from orchestrator import RunOrchestrator
+from tools import create_quick_reference, print_research_summary, save_markdown_curriculum, save_research_metadata
 
-# Add the current directory to sys.path to ensure we can import agent.py
+# Ensure current directory is on sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
-    sys.path.append(current_dir)
+    sys.path.insert(0, current_dir)
 
 # Configure logging
 log_file_path = ACTIVE_CONFIG.log_file
 log_dir = os.path.dirname(log_file_path)
 if log_dir and not os.path.exists(log_dir):
     os.makedirs(log_dir, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(log_file_path),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.FileHandler(log_file_path, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
-
-def get_user_input() -> str:
-    """
-    Interactively get research topic from user with validation.
-
-    Returns:
-        The validated research topic
-    """
-    print("\n" + "="*80)
-    print("🔬 CEDLM AUTONOMOUS RESEARCHER")
-    print("="*80)
-    print("\nWelcome to the Autonomous Deep Research Agent!")
-    print("This agent will conduct rigorous, iterative research on any topic")
-    print("and generate a comprehensive markdown curriculum.\n")
-
-    while True:
-        print("Enter your research topic (or 'quit' to exit):")
-        topic = input("📋 Topic: ").strip()
-
-        if topic.lower() in ['quit', 'exit', 'q']:
-            print("\n👋 Goodbye!")
-            sys.exit(0)
-
-        if not topic:
-            print("⚠️  Topic cannot be empty. Please try again.\n")
-            continue
-
-        if len(topic) < 3:
-            print("⚠️  Topic too short. Please provide more detail.\n")
-            continue
-
-        # Confirm with user
-        print(f"\n✅ Research topic: '{topic}'")
-        confirm = input("Proceed with this topic? (y/n): ").strip().lower()
-
-        if confirm in ['y', 'yes']:
-            return topic
-        else:
-            print("\nLet's try again.\n")
+# Global active run tracker for clean signal handling
+_ACTIVE_ORCHESTRATOR: Optional[RunOrchestrator] = None
+_ACTIVE_RUN_ID: Optional[str] = None
 
 
-def parse_command_line_args() -> Optional[str]:
-    """
-    Parse command line arguments for research topic.
-
-    Returns:
-        The research topic or None if not provided
-    """
-    if len(sys.argv) > 1:
-        # Join all arguments as the topic
-        topic = " ".join(sys.argv[1:])
-
-        # Skip if it's a flag
-        if topic.startswith('-'):
-            return None
-
-        return topic
-
-    return None
+def handle_interrupt(signum, frame):
+    """Graceful interrupt handler to checkpoint run as PAUSED on SIGINT."""
+    global _ACTIVE_ORCHESTRATOR, _ACTIVE_RUN_ID
+    print("\n\n[WARN] Research process interrupted by user.")
+    if _ACTIVE_ORCHESTRATOR and _ACTIVE_RUN_ID:
+        try:
+            _ACTIVE_ORCHESTRATOR.pause_run(_ACTIVE_RUN_ID)
+            print(f"[CHECKPOINT] Saved run '{_ACTIVE_RUN_ID}' to SQLite database.")
+            print(f"[INFO] To resume this run later, execute:")
+            print(f"   python main.py resume {_ACTIVE_RUN_ID}\n")
+        except Exception as e:
+            logger.error(f"Error checkpointing paused run: {e}")
+    sys.exit(0)
 
 
-async def run_agent(
-    agent: Agent,
-    query: str,
-    session_id: str,
-    user_id: str,
-    session_service: InMemorySessionService,
-):
-    """
-    Run the autonomous research agent with full lifecycle management.
-
-    Args:
-        agent: The agent to run
-        query: The research query/topic
-        session_id: The session ID string
-        user_id: User identifier
-        session_service: Session service for state management
-
-    Returns:
-        The agent's response
-    """
-    logger.info(f"Starting autonomous research for topic: {query}")
-    logger.info(f"User ID: {user_id}")
-    logger.info("Active research preset: %s", ACTIVE_CONFIG_NAME)
-
-    runner = Runner(
-        agent=agent,
-        session_service=session_service,
-        app_name=agent.name,
-    )
-
-    print("\n" + "="*80)
-    print("🚀 CEDLM AUTONOMOUS RESEARCHER")
-    print("="*80)
-    print(f"📋 Research Topic: {query}")
-    print(f"⏰ Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"👤 User: {user_id}")
-    print("="*80 + "\n")
-
-    print("🔄 Initiating autonomous research process...")
-    print("   The agent will iteratively research until deep understanding is achieved.")
-    print("   This may take several minutes depending on topic complexity.\n")
-
-    try:
-        # Collect all response parts
-        final_response_text = ""
-        final_state = {}
-
-        # Create proper Content object with user role for the message
-        user_message = Content(
-            role="user",
-            parts=[Part(text=query)]
-        )
-
-        # Use async iteration over the runner events
-        async for event in runner.run_async(
-            user_id=user_id,
-            session_id=session_id,
-            new_message=user_message
-        ):
-            # Process events - look for final response content
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        final_response_text = part.text  # Keep latest text
-
-            # Check for state updates from actions
-            if event.actions and event.actions.state_delta:
-                final_state.update(event.actions.state_delta)
-
-        print("\n✅ Research process completed!\n")
-
-        # Get session to access full state
-        session = await session_service.get_session(
-            app_name=agent.name,
-            user_id=user_id,
-            session_id=session_id
-        )
-
-        # Merge session state with collected state
-        if session and session.state:
-            state = dict(session.state)
-            state.update(final_state)
-        else:
-            state = final_state
-
-        # Print research summary
-        print_research_summary(state)
-
-        # Save outputs
-        output_dir = os.path.join(current_dir, ACTIVE_CONFIG.output_dir)
-
-        # Save the markdown curriculum
-        markdown_content = state.get("final_markdown_curriculum", "")
-        if not markdown_content and final_response_text:
-            # Fallback to the final response text if no markdown in state
-            markdown_content = final_response_text
-
-        if markdown_content:
-            curriculum_path = save_markdown_curriculum(
-                markdown_content=markdown_content,
-                topic=query,
-                output_dir=output_dir
-            )
-            print(f"\n📄 Main curriculum: {curriculum_path}")
-        else:
-            logger.warning("No markdown curriculum generated")
-            print("\n⚠️  Warning: No markdown curriculum was generated")
-
-        # Save research metadata
-        metadata_path = save_research_metadata(
-            state=state,
-            output_dir=output_dir,
-            topic=query
-        )
-        print(f"📊 Metadata: {metadata_path}")
-
-        # Create quick reference
-        quick_ref_path = create_quick_reference(
-            state=state,
-            output_dir=output_dir
-        )
-        print(f"⚡ Quick reference: {quick_ref_path}")
-
-        print("\n" + "="*80)
-        print("✨ All outputs saved successfully!")
-        print("="*80 + "\n")
-
-        return final_response_text
-
-    except Exception as e:
-        logger.error(f"Error during research process: {e}", exc_info=True)
-        print(f"\n❌ Error occurred: {e}")
-        print("Check cedlm_research.log for details.")
-        raise
+signal.signal(signal.SIGINT, handle_interrupt)
 
 
-async def main():
-    """
-    Main entry point for the autonomous researcher.
-    """
-    print("\n" + "="*80)
-    print("🎓 CEDLM AUTONOMOUS DEEP RESEARCH AGENT")
-    print("="*80)
-    print("Powered by Google Agent Development Kit & Gemini 3 Pro\n")
-    print("="*80 + "\n")
-    print(f"🛠️ Active research preset: {ACTIVE_CONFIG_NAME}")
-    print_config(ACTIVE_CONFIG)
+# ============================================================================ #
+# Subcommand Handlers
+# ============================================================================ #
 
-    # Get research topic from command line or interactive input
-    topic = parse_command_line_args()
 
-    if topic:
-        print(f"📋 Topic from command line: {topic}\n")
+def cmd_research(args: argparse.Namespace) -> None:
+    """Handle 'research' subcommand."""
+    global _ACTIVE_ORCHESTRATOR, _ACTIVE_RUN_ID
+
+    topic = args.topic
+    if not topic:
+        print("\nEnter research topic (or 'quit' to exit):")
+        topic = input("Topic: ").strip()
+        if not topic or topic.lower() in ("quit", "exit", "q"):
+            print("[INFO] Exited.")
+            return
+
+    # Determine configuration preset
+    config = _clone_or_load_config(args.preset)
+    if hasattr(args, "auto_approve") and args.auto_approve:
+        config.require_outline_approval = False
+    if hasattr(args, "formats") and args.formats:
+        config.export_formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+
+    print("\n" + "=" * 80)
+    print("KYTHE AUTONOMOUS DEEP RESEARCH")
+    print("=" * 80)
+    print(f"Topic: '{topic}'")
+    print(f"Active Preset: {args.preset or ACTIVE_CONFIG_NAME}")
+    print(f"Database: {config.database_path}")
+    print("=" * 80 + "\n")
+
+    orch = RunOrchestrator(db_path=config.database_path)
+    _ACTIVE_ORCHESTRATOR = orch
+
+    # 1. Create Run
+    run_id = orch.create_run(topic=topic, config=config)
+    _ACTIVE_RUN_ID = run_id
+    print(f"[RUN] Initialized Run ID: {run_id}")
+
+    # 2. Plan Curriculum
+    print("[PLAN] Generating curriculum outline and modular work items...")
+    outline = orch.plan_curriculum(run_id)
+
+    # 3. Outline Review
+    if config.require_outline_approval:
+        approved = interactive_outline_review(orch, run_id, topic, config)
+        if not approved:
+            return
     else:
-        # Show usage examples
-        print("💡 Usage Examples:")
-        print("   python main.py 'Machine Learning Transformers'")
-        print("   python main.py 'Quantum Computing Fundamentals'")
-        print("   python main.py 'Advanced Rust Memory Management'\n")
+        print("[INFO] Auto-approving generated outline per configuration.")
+        orch.approve_outline(run_id)
 
-        # Get interactive input
-        topic = get_user_input()
+    # 4. Run Section Research Loop
+    print("\n[LOOP] Starting autonomous iterative research control loop...")
+    final_status = orch.run_until_terminal(run_id, on_progress=cli_progress_handler)
 
-    # Initialize session service
-    session_service = InMemorySessionService()
-    user_id = f"researcher_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # 5. Display Summary
+    _print_completion_summary(orch, run_id)
 
-    # Create session and get its ID
-    session = await session_service.create_session(
-        app_name=core_agent.name, user_id=user_id)
-    session_id = session.id  # Extract the session ID string
 
-    # Run the autonomous research agent
-    try:
-        await run_agent(
-            agent=core_agent,
-            query=topic,
-            session_id=session_id,  # Pass session_id string, not Session object
-            user_id=user_id,
-            session_service=session_service
-        )
+def cmd_resume(args: argparse.Namespace) -> None:
+    """Handle 'resume' subcommand."""
+    global _ACTIVE_ORCHESTRATOR, _ACTIVE_RUN_ID
 
-        logger.info("Research completed successfully")
+    run_id = args.run_id
+    db_path = getattr(args, "db", DEFAULT_CONFIG.database_path)
+    orch = RunOrchestrator(db_path=db_path)
+    _ACTIVE_ORCHESTRATOR = orch
+    _ACTIVE_RUN_ID = run_id
 
-        # Offer to research another topic
-        print("\n" + "="*80)
-        print("🎉 Research session complete!")
-        print("="*80)
-        print("\nWould you like to research another topic?")
-        another = input("Research another topic? (y/n): ").strip().lower()
-
-        if another in ['y', 'yes']:
-            print("\n🔄 Starting new research session...\n")
-            await main()  # Recursive call for new session
-
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Research interrupted by user")
-        logger.info("Research interrupted by user")
-        print("\nPartial results may have been saved to the output directory.")
-    except Exception as e:
-        print(f"\n\n❌ Fatal error: {e}")
-        logger.error(f"Fatal error in main: {e}", exc_info=True)
+    run = orch.repo.get_run(run_id)
+    if not run:
+        print(f"[ERROR] Run '{run_id}' not found in database ({db_path}).")
         sys.exit(1)
+
+    print("\n" + "=" * 80)
+    print("KYTHE RESUMING RESEARCH RUN")
+    print("=" * 80)
+    print(f"Run ID: {run_id}")
+    print(f"Topic: '{run.topic}'")
+    print(f"Previous Status: {run.status.value}")
+    print("=" * 80 + "\n")
+
+    if run.status == RunStatus.OUTLINE_REVIEW:
+        config = ResearchConfig.from_dict(json.loads(run.config_json))
+        approved = interactive_outline_review(orch, run_id, run.topic, config)
+        if not approved:
+            return
+
+    final_status = orch.resume_run(run_id, on_progress=cli_progress_handler)
+    _print_completion_summary(orch, run_id)
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    """Handle 'status' subcommand."""
+    run_id = args.run_id
+    db_path = getattr(args, "db", DEFAULT_CONFIG.database_path)
+    orch = RunOrchestrator(db_path=db_path)
+
+    try:
+        info = orch.get_status(run_id)
+    except ValueError as e:
+        print(f"[ERROR] {e}")
+        sys.exit(1)
+
+    print("\n" + "=" * 80)
+    print("KYTHE RESEARCH RUN STATUS")
+    print("=" * 80)
+    print(f"Run ID: {info['run_id']}")
+    print(f"Topic: {info['topic']}")
+    print(f"Status: {info['status']}")
+    print(f"Created: {info['created_at']}")
+    print(f"Updated: {info['updated_at']}")
+    if info.get("completed_at"):
+        print(f"Completed: {info['completed_at']}")
+
+    print(f"\nModules Summary:")
+    print(f"  Total: {info['total_sections']} | Completed: {info['complete_sections']} | Exhausted: {info['exhausted_sections']} | Active: {info['active_sections']}")
+    print(f"  Total Sources Referenced: {info['total_sources']}")
+
+    print("\nSection Details:")
+    for s in info["sections"]:
+        st = s["status"]
+        status_tag = "[PASS]" if st == "COMPLETE" else "[EXHAUST]" if st == "EXHAUSTED" else "[IN_PROG]"
+        score_str = f"{s['score']:.1f}%" if s["score"] is not None else "N/A"
+        print(f"  {status_tag} [{s['ordinal']}] {s['title'][:40]} | Depth: {s['depth']} | Status: {st} | Passes: {s['attempt_count']} | Score: {score_str} | Open Gaps: {s['open_gaps']}")
+
+    if info.get("artifacts"):
+        print("\nGenerated Artifacts:")
+        for a in info["artifacts"]:
+            print(f"  [{a['type'].upper()}] {a['path']}")
+
+    print("=" * 80 + "\n")
+
+
+def cmd_list_runs(args: argparse.Namespace) -> None:
+    """Handle 'list-runs' subcommand."""
+    db_path = getattr(args, "db", DEFAULT_CONFIG.database_path)
+    orch = RunOrchestrator(db_path=db_path)
+
+    filter_status = None
+    if hasattr(args, "status") and args.status:
+        try:
+            filter_status = RunStatus(args.status.upper())
+        except ValueError:
+            print(f"[WARN] Unknown status '{args.status}'. Listing all runs.")
+
+    runs = orch.repo.list_runs(status=filter_status)
+
+    print("\n" + "=" * 80)
+    print(f"KYTHE RESEARCH RUNS ({len(runs)} found)")
+    print("=" * 80)
+    if not runs:
+        print("No research runs found in database.")
+    else:
+        for r in runs:
+            sections = orch.repo.get_sections(r.run_id)
+            comp = sum(1 for s in sections if s.status == "COMPLETE")
+            print(f"- ID: {r.run_id} | Status: {r.status.value:<12} | Modules: {comp}/{len(sections)} | Topic: '{r.topic}'")
+    print("=" * 80 + "\n")
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    """Handle 'export' subcommand."""
+    run_id = args.run_id
+    db_path = getattr(args, "db", DEFAULT_CONFIG.database_path)
+    orch = RunOrchestrator(db_path=db_path)
+
+    formats = [f.strip() for f in args.format.split(",") if f.strip()] if args.format else None
+    print(f"\n[EXPORT] Exporting run '{run_id}' (formats: {formats or 'default'})...")
+
+    try:
+        artifacts = orch.export_run(run_id, formats=formats)
+        print("\n[OK] Export artifacts generated:")
+        for a in artifacts:
+            print(f"  [{a.type.upper()}] {a.path} (SHA256: {a.sha256[:12]}...)")
+        print()
+    except Exception as e:
+        print(f"[ERROR] Export failed: {e}")
+        logger.error(f"Export error for run {run_id}: {e}", exc_info=True)
+
+
+# ============================================================================ #
+# Helper Functions
+# ============================================================================ #
+
+
+def _clone_or_load_config(preset_name: Optional[str] = None) -> ResearchConfig:
+    """Load configuration from preset or defaults."""
+    if preset_name:
+        return ResearchConfig.from_dict(get_config_by_name(preset_name).to_dict())
+    return ResearchConfig.from_dict(ACTIVE_CONFIG.to_dict())
+
+
+def _print_completion_summary(orch: RunOrchestrator, run_id: str) -> None:
+    """Display final summary and artifact links after run completes."""
+    status = orch.get_status(run_id)
+    print("\n" + "=" * 80)
+    print("KYTHE RESEARCH RUN COMPLETE")
+    print("=" * 80)
+    print(f"Run ID: {status['run_id']}")
+    print(f"Topic: {status['topic']}")
+    print(f"Completed Modules: {status['complete_sections']}/{status['total_sections']}")
+    print(f"Total Sources: {status['total_sources']}")
+
+    if status.get("artifacts"):
+        print("\nExported Artifacts:")
+        for a in status["artifacts"]:
+            print(f"  - [{a['type'].upper()}]: {a['path']}")
+
+    print("\n" + "=" * 80 + "\n")
+
+
+# ============================================================================ #
+# CLI Parser Setup & Main Entry Point
+# ============================================================================ #
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct argument parser with subcommands and default aliases."""
+    parser = argparse.ArgumentParser(
+        prog="kythe",
+        description="Kythe: Autonomous Section-by-Section Deep Research Agent",
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
+
+    # 1. research
+    p_research = subparsers.add_parser("research", help="Start a new autonomous research run")
+    p_research.add_argument("topic", nargs="?", default="", help="Research topic or learning goal")
+    p_research.add_argument("--preset", "-p", choices=["quick", "standard", "deep", "comprehensive"], help="Quality preset")
+    p_research.add_argument("--auto-approve", action="store_true", help="Auto-approve outline without interactive prompt")
+    p_research.add_argument("--formats", help="Comma-separated export formats (markdown,html,pdf,quiz,flashcards)")
+
+    # 2. resume
+    p_resume = subparsers.add_parser("resume", help="Resume an interrupted or paused run")
+    p_resume.add_argument("run_id", help="ID of the research run to resume")
+    p_resume.add_argument("--db", default="research.db", help="SQLite database path")
+
+    # 3. status
+    p_status = subparsers.add_parser("status", help="Check progress and metrics of a run")
+    p_status.add_argument("run_id", help="ID of the research run to inspect")
+    p_status.add_argument("--db", default="research.db", help="SQLite database path")
+
+    # 4. list-runs
+    p_list = subparsers.add_parser("list-runs", help="List all research runs")
+    p_list.add_argument("--status", help="Filter by run status (e.g. paused, completed, researching)")
+    p_list.add_argument("--db", default="research.db", help="SQLite database path")
+
+    # 5. export
+    p_export = subparsers.add_parser("export", help="Generate or regenerate export artifacts")
+    p_export.add_argument("run_id", help="ID of the research run to export")
+    p_export.add_argument("--format", help="Comma-separated formats (markdown,html,pdf,quiz,flashcards)")
+    p_export.add_argument("--db", default="research.db", help="SQLite database path")
+
+    return parser
+
+
+def main() -> None:
+    """Main CLI entry point with backwards compatibility support."""
+    parser = build_parser()
+
+    # Backwards compatibility: If first arg is not a known subcommand and not a flag, treat as 'research <args>'
+    known_commands = {"research", "resume", "status", "list-runs", "export", "-h", "--help"}
+    raw_args = sys.argv[1:]
+
+    if raw_args and raw_args[0] not in known_commands:
+        # Wrap as research topic
+        topic_arg = " ".join(raw_args)
+        args = parser.parse_args(["research", topic_arg])
+    elif not raw_args:
+        # Interactive default
+        args = parser.parse_args(["research", ""])
+    else:
+        args = parser.parse_args(raw_args)
+
+    if args.command == "research":
+        cmd_research(args)
+    elif args.command == "resume":
+        cmd_resume(args)
+    elif args.command == "status":
+        cmd_status(args)
+    elif args.command == "list-runs":
+        cmd_list_runs(args)
+    elif args.command == "export":
+        cmd_export(args)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
-    # Display banner
-    print("\n")
-    print("╔═══════════════════════════════════════════════════════════════════════════════╗")
-    print("║                                                                               ║")
-    print("║                          LEARNING AGENT ADK v2.5                              ║")
-    print("║                                                                               ║")
-    print("║           Rigorous Iterative Research Until Deep Understanding                ║")
-    print("║                                                                               ║")
-    print("╚═══════════════════════════════════════════════════════════════════════════════╝")
-
-    # Run the async main function
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n\n👋 Goodbye!")
-    except Exception as e:
-        print(f"\n\n❌ Critical error: {e}")
-        sys.exit(1)
+    main()

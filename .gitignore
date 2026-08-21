@@ -1,7 +1,5 @@
 learning_agent/End_to_End_Upgrade_Spec.pdf
 learning_agent/learning_agent.code-workspace
-learning_agent/__pycache__/agent.cpython-314.pyc
-learning_agent/__pycache__/config.cpython-314.pyc
-learning_agent/__pycache__/main.cpython-314.pyc
-learning_agent/__pycache__/tools.cpython-314.pyc
+learning_agent/__pycache__/*
+learning_agent/tests/__pycache__/*
 learning_agent/.env
