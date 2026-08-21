@@ -9,6 +9,9 @@ google-genai>=1.52.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
+# Terminal UI and Dashboard
+rich>=13.0.0
+
 # Deep reader and HTTP
 httpx>=0.27.0
 beautifulsoup4>=4.12.0

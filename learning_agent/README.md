@@ -81,6 +81,9 @@ python main.py research "Distributed Consensus Algorithms and Raft"
 # Run with the deep preset and bypass interactive outline review
 python main.py research "Zero Knowledge Proofs and zk-SNARKs" --preset deep --auto-approve
 
+# Run in headless mode without the live terminal dashboard
+python main.py research "Raft Consensus" --preset quick --auto-approve --no-dashboard
+
 # Specify custom export formats
 python main.py research "Rust Memory Safety and Concurrency" --formats markdown,html,pdf,quiz,flashcards
 ```

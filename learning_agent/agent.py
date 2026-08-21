@@ -941,7 +941,7 @@ research_pipeline = SequentialAgent(
 )
 
 core_agent = research_pipeline
-app = App(root_agent=core_agent, name="Learning_Agent_ADK")
+app = App(root_agent=core_agent, name="Kythe_ADK_Engine")
 
 __all__ = [
     "core_agent",

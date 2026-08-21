@@ -132,9 +132,103 @@ def cmd_research(args: argparse.Namespace) -> None:
         orch.approve_outline(run_id)
 
     print("\n[LOOP] Starting agentic iterative research control loop...")
-    final_status = orch.run_until_terminal(run_id, on_progress=cli_progress_handler)
+    use_dashboard = getattr(args, "dashboard", True) and sys.stdout.isatty()
+    progress_handler, dash = _create_dashboard_handler(
+        orch=orch,
+        run_id=run_id,
+        topic=topic,
+        preset=args.preset or ACTIVE_CONFIG_NAME,
+        use_dashboard=use_dashboard,
+    )
+
+    if dash:
+        dash.start()
+
+    try:
+        final_status = orch.run_until_terminal(run_id, on_progress=progress_handler)
+    finally:
+        if dash:
+            dash.stop()
 
     _print_completion_summary(orch, run_id)
+
+
+def _create_dashboard_handler(
+    orch: RunOrchestrator,
+    run_id: str,
+    topic: str,
+    preset: str,
+    use_dashboard: bool,
+):
+    """Create a dashboard progress handler or fallback to CLI handler."""
+    if not use_dashboard:
+        return cli_progress_handler, None
+
+    try:
+        from dashboard import LiveTerminalDashboard
+        sections = orch.repo.get_sections(run_id)
+        run = orch.repo.get_run(run_id)
+        max_passes = 3
+        if run:
+            try:
+                cfg_data = json.loads(run.config_json)
+                max_passes = cfg_data.get("max_iterations", 3)
+            except Exception:
+                pass
+
+        dash = LiveTerminalDashboard(
+            run_id=run_id,
+            topic=topic,
+            preset=preset,
+            enabled=True,
+        )
+        dash.init_sections([
+            {
+                "id": s.section_id,
+                "order_index": s.ordinal,
+                "title": s.title,
+                "target_depth": s.depth_target,
+                "max_passes": max_passes,
+            }
+            for s in sections
+        ])
+
+        def handler(event: Dict[str, Any]) -> None:
+            ev_type = event.get("event")
+            if ev_type == "section_pass_start":
+                dash.on_progress_event("section_start", {
+                    "section_id": event.get("section_id"),
+                    "title": event.get("section_title"),
+                    "pass_num": event.get("attempt", 1),
+                })
+            elif ev_type == "section_pass_end":
+                dash.on_progress_event("gate_evaluated", {
+                    "section_id": event.get("section_id"),
+                    "passed": event.get("passed", False),
+                    "quality_score": event.get("score", 0.0),
+                    "word_count": event.get("word_count", 0),
+                    "source_count": event.get("source_count", 0),
+                })
+                if not event.get("passed", False):
+                    dash.on_progress_event("gap_retry", {
+                        "section_id": event.get("section_id"),
+                        "gap_count": event.get("open_gaps", 0),
+                        "pass_num": event.get("attempt", 1) + 1,
+                    })
+                else:
+                    dash.on_progress_event("section_complete", {
+                        "section_id": event.get("section_id"),
+                        "passed": True,
+                    })
+            elif ev_type == "synthesis_start":
+                dash.log_activity("Compiling master research dossier...")
+            elif ev_type == "run_completed":
+                dash.on_progress_event("run_complete", {})
+
+        return handler, dash
+    except Exception as e:
+        logger.warning("Could not initialize live dashboard: %s. Using standard CLI.", e)
+        return cli_progress_handler, None
 
 
 def cmd_resume(args: argparse.Namespace) -> None:
@@ -166,7 +260,24 @@ def cmd_resume(args: argparse.Namespace) -> None:
         if not approved:
             return
 
-    final_status = orch.resume_run(run_id, on_progress=cli_progress_handler)
+    use_dashboard = getattr(args, "dashboard", True) and sys.stdout.isatty()
+    progress_handler, dash = _create_dashboard_handler(
+        orch=orch,
+        run_id=run_id,
+        topic=run.topic,
+        preset="standard",
+        use_dashboard=use_dashboard,
+    )
+
+    if dash:
+        dash.start()
+
+    try:
+        final_status = orch.resume_run(run_id, on_progress=progress_handler)
+    finally:
+        if dash:
+            dash.stop()
+
     _print_completion_summary(orch, run_id)
 
 
@@ -291,11 +402,13 @@ def build_cli_parser() -> argparse.ArgumentParser:
     p_research.add_argument("--preset", choices=list_preset_names(), default=None, help="Configuration preset")
     p_research.add_argument("--auto-approve", action="store_true", help="Auto-approve outline without interactive prompt")
     p_research.add_argument("--formats", default="markdown,html,pdf,quiz,flashcards,metadata", help="Comma-separated export formats")
+    p_research.add_argument("--dashboard", action=argparse.BooleanOptionalAction, default=True, help="Enable live interactive terminal dashboard")
     p_research.set_defaults(func=cmd_research)
 
     p_resume = subparsers.add_parser("resume", help="Resume an interrupted research run")
     p_resume.add_argument("run_id", help="Run ID to resume")
     p_resume.add_argument("--db", default=DEFAULT_CONFIG.database_path, help="SQLite database path")
+    p_resume.add_argument("--dashboard", action=argparse.BooleanOptionalAction, default=True, help="Enable live interactive terminal dashboard")
     p_resume.set_defaults(func=cmd_resume)
 
     p_status = subparsers.add_parser("status", help="Inspect status and progress of a run")
