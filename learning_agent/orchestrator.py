@@ -70,8 +70,6 @@ class RunOrchestrator:
         self.search_provider = search_provider
         self.llm_provider = llm_provider
 
-    # --- Run Creation and Planning --- #
-
     def create_run(self, topic: str, config: Optional[ResearchConfig] = None) -> str:
         """
         Create a new research run in SQLite.
@@ -172,8 +170,6 @@ class RunOrchestrator:
         self.repo.update_run_status(run_id, RunStatus.RESEARCHING)
         logger.info("Outline approved for run %s; transitioned to RESEARCHING", run_id)
 
-    # --- Section Pass Execution --- #
-
     def execute_section_pass(
         self,
         section: Section,
@@ -205,10 +201,8 @@ class RunOrchestrator:
         self.repo.create_pass(p)
         self.repo.update_section_status(section.section_id, SectionStatus.RESEARCHING)
 
-        # 1. Open Gaps
         open_gaps = self.repo.get_open_gaps(section.section_id)
 
-        # 2. Query Planning
         from agent import plan_section_queries, research_section_content
 
         if self.llm_provider and hasattr(self.llm_provider, "plan_section_queries"):
@@ -218,7 +212,6 @@ class RunOrchestrator:
 
         query_plan_json = json.dumps(queries)
 
-        # 3. Search
         candidate_results: List[Dict[str, Any]] = []
         if self.search_provider:
             candidate_results = self.search_provider(queries, config.max_candidates_per_query)
@@ -226,7 +219,6 @@ class RunOrchestrator:
             from agent import perform_search
             candidate_results = perform_search(queries, config.max_candidates_per_query)
 
-        # 4. Deep Reading & Evidence Gathering
         deep_reader = DeepReader(
             repo=self.repo,
             fetch_timeout_s=config.fetch_timeout_s,
@@ -304,12 +296,10 @@ class RunOrchestrator:
                 config=config,
             )
 
-        # 6. Quality Evaluation
         evaluator = QualityEvaluator(config)
         evaluation = evaluator.evaluate_section(section, draft, all_section_sources)
         evaluation_json = json.dumps(evaluation.to_dict())
 
-        # 7. Checkpoint Pass Atomically
         self.repo.complete_pass(
             pass_id=pass_id,
             draft_text=draft,
@@ -317,14 +307,12 @@ class RunOrchestrator:
             query_plan_json=query_plan_json,
         )
 
-        # Update Section & Gap State
         if evaluation.passed:
             self.repo.update_section_status(section.section_id, SectionStatus.COMPLETE, evaluation.score)
             self.repo.resolve_gaps_for_section(section.section_id, pass_id)
             logger.info("Section %s PASSED quality gate on pass %d (score: %.1f)", section.section_id, attempt_ordinal, evaluation.score)
         elif attempt_ordinal >= config.max_iterations:
             self.repo.update_section_status(section.section_id, SectionStatus.EXHAUSTED, evaluation.score)
-            # Supersede old gaps with latest open gaps
             self.repo.supersede_gaps_for_section(section.section_id, pass_id)
             new_gaps = [
                 Gap(
@@ -363,16 +351,11 @@ class RunOrchestrator:
         p.evaluation_json = evaluation_json
         return p, evaluation
 
-    # --- Run Loop Execution --- #
-
     def run_until_terminal(
         self,
         run_id: str,
         on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> RunStatus:
-        """
-        Execute the iterative research control loop across all sections until completion.
-        """
         run = self.repo.get_run(run_id)
         if not run:
             raise ValueError(f"Run {run_id} not found")
@@ -388,9 +371,7 @@ class RunOrchestrator:
                 self.approve_outline(run_id)
             sections = self.repo.get_sections(run_id)
 
-        # Section-by-section pass loop
         for section in sections:
-            # Re-fetch section to get latest state
             sec = self.repo.get_section(section.section_id) or section
             while sec.status not in (SectionStatus.COMPLETE, SectionStatus.EXHAUSTED, SectionStatus.FAILED):
                 if sec.attempt_count >= config.max_iterations:
@@ -425,7 +406,6 @@ class RunOrchestrator:
 
                 sec = self.repo.get_section(sec.section_id)
 
-        # Final Synthesis and Export
         all_sections = self.repo.get_sections(run_id)
         has_failed = any(s.status == SectionStatus.FAILED for s in all_sections)
         all_terminal = all(s.status in (SectionStatus.COMPLETE, SectionStatus.EXHAUSTED) for s in all_sections)
@@ -449,16 +429,12 @@ class RunOrchestrator:
         run_id: str,
         on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> RunStatus:
-        """
-        Safely and idempotently resume an interrupted research run from SQLite.
-        """
         run = self.repo.get_run(run_id)
         if not run:
             raise ValueError(f"Run {run_id} not found")
 
         logger.info("Resuming research run %s (current status: %s)", run_id, run.status.value)
 
-        # Clean up any in-flight pass left in STARTED status
         sections = self.repo.get_sections(run_id)
         for s in sections:
             passes = self.repo.get_passes_for_section(s.section_id)
@@ -475,8 +451,6 @@ class RunOrchestrator:
         """Pause a run."""
         self.repo.update_run_status(run_id, RunStatus.PAUSED)
         logger.info("Paused run %s", run_id)
-
-    # --- Rich Exports --- #
 
     def export_run(
         self,

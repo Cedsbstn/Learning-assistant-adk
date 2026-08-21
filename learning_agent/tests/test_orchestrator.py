@@ -97,22 +97,18 @@ def test_full_orchestration_workflow(orchestrator, tmp_path):
         output_dir=str(tmp_path / "output"),
     )
 
-    # 1. Create Run
     run_id = orch.create_run(topic="Rust Concurrency", config=cfg)
     assert run_id.startswith("run_")
 
-    # 2. Plan Curriculum
     outline = orch.plan_curriculum(run_id)
     assert len(outline.sections) == 2
     status_info = orch.get_status(run_id)
     assert status_info["status"] == "OUTLINE_REVIEW"
     assert status_info["total_sections"] == 2
 
-    # 3. Approve Outline
     orch.approve_outline(run_id)
     assert orch.get_status(run_id)["status"] == "RESEARCHING"
 
-    # 4. Run until terminal
     progress_events = []
     final_status = orch.run_until_terminal(run_id, on_progress=lambda e: progress_events.append(e))
     assert final_status == RunStatus.COMPLETED

@@ -3,3 +3,4 @@ learning_agent/learning_agent.code-workspace
 learning_agent/__pycache__/*
 learning_agent/tests/__pycache__/*
 learning_agent/.env
+learning_agent/AGENTS.md

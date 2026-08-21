@@ -288,8 +288,6 @@ class PersistenceRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
 
-    # --- Run Operations --- #
-
     def create_run(self, run: Run) -> Run:
         """Insert a new run."""
         with self.db.transaction() as conn:
@@ -360,8 +358,6 @@ class PersistenceRepository:
             else:
                 cursor = conn.execute("SELECT * FROM runs ORDER BY created_at DESC;")
             return [Run.from_row(dict(row)) for row in cursor.fetchall()]
-
-    # --- Section Operations --- #
 
     def save_sections(self, sections: List[Section]) -> None:
         """Insert or replace a batch of sections for a run."""
@@ -484,8 +480,6 @@ class PersistenceRepository:
             row = cursor.fetchone()
             return row["attempt_count"] if row else 1
 
-    # --- Pass Operations --- #
-
     def create_pass(self, p: Pass) -> Pass:
         """Record the start of a research pass."""
         with self.db.transaction() as conn:
@@ -577,8 +571,6 @@ class PersistenceRepository:
             if not row:
                 return None
             return Pass.from_row(dict(row))
-
-    # --- Source Operations --- #
 
     def upsert_source(self, source: Source) -> Source:
         """Insert or update a source record by canonical_url."""
@@ -724,8 +716,6 @@ class PersistenceRepository:
                 (citation_count, section_id, source_id, pass_id),
             )
 
-    # --- Gap Operations --- #
-
     def save_gaps(self, gaps: List[Gap]) -> None:
         """Batch insert gaps."""
         with self.db.transaction() as conn:
@@ -788,8 +778,6 @@ class PersistenceRepository:
                 (GapStatus.SUPERSEDED.value, pass_id, section_id, GapStatus.OPEN.value),
             )
 
-    # --- Claim Operations --- #
-
     def save_claims(self, claims: List[Claim]) -> None:
         """Save claims and link them to sources."""
         with self.db.transaction() as conn:
@@ -812,8 +800,6 @@ class PersistenceRepository:
                         """,
                         (c.claim_id, src_id),
                     )
-
-    # --- Artifact Operations --- #
 
     def record_artifact(self, artifact: Artifact) -> Artifact:
         """Record a generated export artifact."""
@@ -844,8 +830,6 @@ class PersistenceRepository:
             return [Artifact.from_row(dict(row)) for row in cursor.fetchall()]
 
     get_artifacts_for_run = get_artifacts
-
-    # --- Fetch Cache Operations --- #
 
     def get_cached_page(self, canonical_url: str) -> Optional[Dict[str, Any]]:
         """Get cached extracted page if not expired."""

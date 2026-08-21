@@ -234,6 +234,25 @@ class HTMLExporter:
             }}
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        :focus-visible {{
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }}
+        .skip-link {{
+            position: absolute;
+            top: -50px;
+            left: 0;
+            background: var(--primary);
+            color: #ffffff;
+            padding: 8px 16px;
+            z-index: 100;
+            text-decoration: none;
+            font-weight: 600;
+            border-radius: 0 0 4px 0;
+        }}
+        .skip-link:focus {{
+            top: 0;
+        }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg);
@@ -288,13 +307,35 @@ class HTMLExporter:
             background-color: var(--badge-bg);
             color: var(--badge-text);
             padding: 0.25rem 0.6rem;
-            border-radius: 9999px;
+            border-radius: 4px;
             font-size: 0.8rem;
             font-weight: 600;
             margin-bottom: 1.5rem;
         }}
+        @media (max-width: 768px) {{
+            body {{
+                flex-direction: column;
+            }}
+            #sidebar {{
+                width: 100%;
+                height: auto;
+                position: static;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+                padding: 1.5rem 1rem;
+            }}
+            #main {{
+                padding: 1.5rem 1rem;
+                max-width: 100%;
+            }}
+            #sidebar a {{
+                display: inline-block;
+                min-height: 44px;
+                line-height: 44px;
+            }}
+        }}
         @media print {{
-            #sidebar {{ display: none; }}
+            #sidebar, .skip-link {{ display: none; }}
             body {{ display: block; background: #fff; color: #000; }}
             #main {{ max-width: 100%; padding: 0; }}
             pre, blockquote, table {{ page-break-inside: avoid; }}
@@ -303,7 +344,8 @@ class HTMLExporter:
     </style>
 </head>
 <body>
-    <nav id="sidebar">
+    <a href="#main" class="skip-link">Skip to main content</a>
+    <nav id="sidebar" aria-label="Curriculum Navigation">
         <h2>Curriculum Modules</h2>
         <ul>
             {"".join(f'<li><a href="#module-{s.get("ordinal", 1)}">Module {s.get("ordinal", 1)}: {html.escape(s.get("title", ""))[:30]}</a></li>' for s in curriculum.sections_content)}
@@ -651,35 +693,30 @@ class ExportManager:
         base_name = f"{sanitize_filename(curriculum_model.topic)}_{run_id[:8]}"
         generated_artifacts: List[Artifact] = []
 
-        # 1. Markdown (Canonical)
         if "markdown" in formats or "md" in formats:
             md_path = str(out_dir / f"{base_name}.md")
             generated_artifacts.append(
                 MarkdownExporter.export(curriculum_model, final_report, md_path)
             )
 
-        # 2. HTML (Responsive + Print)
         if "html" in formats:
             html_path = str(out_dir / f"{base_name}.html")
             generated_artifacts.append(
                 HTMLExporter.export(curriculum_model, final_report, html_path)
             )
 
-        # 3. PDF
         if "pdf" in formats:
             pdf_path = str(out_dir / f"{base_name}.pdf")
             generated_artifacts.append(
                 PDFExporter.export(curriculum_model, final_report, pdf_path)
             )
 
-        # 4. Quiz JSON
         if "quiz" in formats:
             quiz_path = str(out_dir / f"{base_name}.quiz.json")
             generated_artifacts.append(
                 QuizExporter.export(curriculum_model, quiz_path)
             )
 
-        # 5. Flashcards (JSON and CSV)
         if "flashcards" in formats or "flashcard" in formats:
             fc_json_path = str(out_dir / f"{base_name}.flashcards.json")
             generated_artifacts.append(
@@ -690,7 +727,6 @@ class ExportManager:
                 FlashcardsExporter.export_csv(curriculum_model, fc_csv_path)
             )
 
-        # 6. Metadata & Manifest JSON
         if "metadata" in formats or "meta" in formats or True:
             meta_path = str(out_dir / f"{base_name}.metadata.json")
             meta_artifact = MetadataExporter.export(

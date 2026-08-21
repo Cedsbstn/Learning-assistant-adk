@@ -22,6 +22,7 @@ with strict antislop prompting and backward-compatible SequentialAgent definitio
 from __future__ import annotations
 
 import json
+from models import GapCategory
 import logging
 import os
 import re
@@ -75,9 +76,6 @@ except ImportError:
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# --- Configuration Loading --- #
-
-
 def _clone_config(config: ResearchConfig) -> ResearchConfig:
     """Create a copy of the provided config to avoid accidental mutation."""
     return ResearchConfig.from_dict(config.to_dict())
@@ -105,7 +103,6 @@ def load_active_config() -> tuple[ResearchConfig, str]:
 
 ACTIVE_CONFIG, ACTIVE_CONFIG_NAME = load_active_config()
 
-# --- Configure Google API Key --- #
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
     try:
@@ -128,15 +125,10 @@ if ACTIVE_CONFIG.enable_safety:
 else:
     safety_settings = None
 
-# --- Pre-compiled Regex Patterns --- #
-CITE_PATTERN = re.compile(r'<cite\s+source\s*=\s*["\']?\s*(src-\d+)\s*["\']?\s*/>', re.IGNORECASE)
+CITE_PATTERN = re.compile(
+    r'<cite\s+source\s*=\s*["\']?\s*(src-\d+)\s*["\']?\s*/>', re.IGNORECASE)
 WHITESPACE_PUNCT_PATTERN = re.compile(r"\s+([.,;:])")
 SECTION_HEADER_PATTERN = re.compile(r"^#{2,3}\s+(.+)$", re.MULTILINE)
-
-
-# ============================================================================ #
-# Discrete LLM Pipeline Functions (Used by RunOrchestrator)
-# ============================================================================ #
 
 
 def _call_gemini(prompt: str, system_instruction: str = "", model_override: Optional[str] = None) -> str:
@@ -197,7 +189,8 @@ def generate_curriculum_outline(
     """
 
     try:
-        raw_output = _call_gemini(user_prompt, system_instruction=system_prompt)
+        raw_output = _call_gemini(
+            user_prompt, system_instruction=system_prompt)
         # Parse JSON
         json_match = re.search(r"```json\s*([\s\S]*?)\s*```", raw_output)
         json_str = json_match.group(1) if json_match else raw_output.strip()
@@ -226,42 +219,49 @@ def generate_curriculum_outline(
         return outline, outline_sections
 
     except Exception as e:
-        logger.warning(f"LLM outline generation failed or offline ({e}). Generating structured default outline.")
+        logger.warning(
+            f"LLM outline generation failed or offline ({e}). Generating structured default outline.")
         # Robust fallback outline
         outline_sections = [
             OutlineSection(
                 ordinal=1,
                 title=f"Fundamentals and Core Architecture of {topic}",
-                objectives=["Understand core definitions and mental models", "Explore foundational mechanics"],
+                objectives=["Understand core definitions and mental models",
+                            "Explore foundational mechanics"],
                 depth_target="basic",
             ),
             OutlineSection(
                 ordinal=2,
                 title=f"Key Protocols, Data Structures, and Mechanics",
-                objectives=["Analyze internal algorithms and data structures", "Examine execution patterns"],
+                objectives=[
+                    "Analyze internal algorithms and data structures", "Examine execution patterns"],
                 depth_target="intermediate",
             ),
             OutlineSection(
                 ordinal=3,
                 title=f"Advanced Implementations and System Design",
-                objectives=["Implement production-grade architecture", "Handle concurrency, scale, and edge cases"],
+                objectives=["Implement production-grade architecture",
+                            "Handle concurrency, scale, and edge cases"],
                 depth_target="advanced",
             ),
             OutlineSection(
                 ordinal=4,
                 title=f"Practical Applications, Case Studies, and Optimization",
-                objectives=["Review real-world industry case studies", "Profile performance and apply optimization patterns"],
+                objectives=["Review real-world industry case studies",
+                            "Profile performance and apply optimization patterns"],
                 depth_target="advanced",
             ),
             OutlineSection(
                 ordinal=5,
                 title=f"Best Practices, Common Pitfalls, and Future Directions",
-                objectives=["Avoid common anti-patterns", "Synthesize guidelines for production readiness"],
+                objectives=["Avoid common anti-patterns",
+                            "Synthesize guidelines for production readiness"],
                 depth_target="intermediate",
             ),
         ]
         raw_md = f"# {topic}: Comprehensive Curriculum\n\n" + "\n".join(
-            f"## Module {s.ordinal}: {s.title} ({s.depth_target})\n" + "\n".join(f"- {o}" for o in s.objectives)
+            f"## Module {s.ordinal}: {s.title} ({s.depth_target})\n" + "\n".join(
+                f"- {o}" for o in s.objectives)
             for s in outline_sections
         )
         outline = CurriculumOutline(
@@ -285,7 +285,8 @@ def plan_section_queries(
 
     # Add query for objectives
     if section.objectives:
-        queries.append(f"{topic} {section.objectives[0]} architecture examples")
+        queries.append(
+            f"{topic} {section.objectives[0]} architecture examples")
 
     # Add queries for open gaps
     for gap in gaps[:config.max_queries_per_pass - len(queries)]:
@@ -324,11 +325,13 @@ def perform_search(queries: List[str], max_candidates_per_query: int = 5) -> Lis
                             "snippet": r.get("snippet", ""),
                         })
         except Exception as e:
-            logger.warning(f"Search tool execution failed for query '{q}': {e}")
+            logger.warning(
+                f"Search tool execution failed for query '{q}': {e}")
 
     # If no results from live search (e.g. offline/testing), provide high-authority mock candidates
     if not results:
-        sanitized_q = queries[0].replace(" ", "-").lower() if queries else "topic"
+        sanitized_q = queries[0].replace(
+            " ", "-").lower() if queries else "topic"
         results = [
             {
                 "url": f"https://en.wikipedia.org/wiki/{sanitized_q}",
@@ -370,13 +373,15 @@ def research_section_content(
             f"--- SOURCE [{chunk.source_id}]: {chunk.source_title} ({chunk.source_url}) ---\n"
             f"{chunk.text}\n"
         )
-    evidence_text = "\n".join(evidence_blocks) if evidence_blocks else "No external page text extracted; use domain knowledge and cite available sources."
+    evidence_text = "\n".join(
+        evidence_blocks) if evidence_blocks else "No external page text extracted; use domain knowledge and cite available sources."
 
     source_manifest = "\n".join(
         f"- [{s.source_id}]: {s.title} ({s.domain})" for s in section_sources
     )
 
-    gaps_text = "\n".join(f"- [{g.category.value if isinstance(g.category, GapCategory) else g.category}] {g.description}" for g in gaps) or "None (Initial Pass)"
+    gaps_text = "\n".join(
+        f"- [{g.category.value if isinstance(g.category, GapCategory) else g.category}] {g.description}" for g in gaps) or "None (Initial Pass)"
 
     system_prompt = (
         "You are a technical research author and systems engineer. "
@@ -422,7 +427,8 @@ def research_section_content(
         if draft and len(draft.split()) >= 100:
             return draft
     except Exception as e:
-        logger.warning(f"LLM section research synthesis failed or offline ({e}). Using deterministic structured fallback generator.")
+        logger.warning(
+            f"LLM section research synthesis failed or offline ({e}). Using deterministic structured fallback generator.")
 
     # High-quality fallback synthesizer for offline / testing / fallback
     src_ids = [s.source_id for s in section_sources]
@@ -577,7 +583,8 @@ def generate_learning_assessments(
     for sec in sections_content:
         sec_id = sec.get("section_id", "")
         title = sec.get("title", topic)
-        sec_sources = [s.get("source_id", "") for s in sec.get("sources", []) if s.get("source_id")]
+        sec_sources = [s.get("source_id", "")
+                       for s in sec.get("sources", []) if s.get("source_id")]
 
         # Generate Quiz Questions
         quizzes.append(
@@ -618,7 +625,8 @@ def generate_learning_assessments(
                 front=f"What is the core principle of {title}?",
                 back=f"Enforcing rigorous state transitions, boundary validation, and lifecycle safety without sacrificing execution performance.",
                 section_id=sec_id,
-                tags=[topic.lower().replace(" ", "-"), "architecture", "fundamentals"],
+                tags=[topic.lower().replace(" ", "-"),
+                      "architecture", "fundamentals"],
                 source_ids=sec_sources,
                 difficulty=sec.get("depth_target", "intermediate"),
             )
@@ -630,7 +638,8 @@ def generate_learning_assessments(
                 front=f"Name a critical performance tradeoff in {title}.",
                 back=f"Balancing memory footprint and synchronization overhead against algorithmic throughput and concurrency isolation.",
                 section_id=sec_id,
-                tags=[topic.lower().replace(" ", "-"), "performance", "tradeoffs"],
+                tags=[topic.lower().replace(" ", "-"),
+                      "performance", "tradeoffs"],
                 source_ids=sec_sources,
                 difficulty=sec.get("depth_target", "intermediate"),
             )
@@ -685,7 +694,8 @@ def research_sources(callback_context: CallbackContext, **kwargs) -> None:
                     if url and url not in url_to_id:
                         source_id = f"src-{id_counter}"
                         url_to_id[url] = source_id
-                        domain = url.split("//")[-1].split("/")[0] if "//" in url else url
+                        domain = url.split(
+                            "//")[-1].split("/")[0] if "//" in url else url
                         sources.append({
                             "id": source_id,
                             "title": result.get("title", ""),
@@ -709,7 +719,8 @@ def extract_curriculum_sections(callback_context: CallbackContext, **kwargs) -> 
     if not curriculum_outline:
         return
     matches = SECTION_HEADER_PATTERN.findall(curriculum_outline)
-    unique_sections = list(dict.fromkeys(s.strip() for s in matches if len(s.strip()) > 3))
+    unique_sections = list(dict.fromkeys(s.strip()
+                           for s in matches if len(s.strip()) > 3))
     state["curriculum_sections"] = unique_sections
 
 
@@ -737,12 +748,15 @@ def assess_knowledge_depth(callback_context: CallbackContext, **kwargs) -> None:
     source_count = len(sources)
     research_lower = section_research.lower()
 
-    example_terms = {"example", "case study", "for instance", "such as", "e.g."}
-    technical_terms = {"algorithm", "implementation", "architecture", "methodology", "technique", "approach", "framework"}
+    example_terms = {"example", "case study",
+                     "for instance", "such as", "e.g."}
+    technical_terms = {"algorithm", "implementation", "architecture",
+                       "methodology", "technique", "approach", "framework"}
 
     has_examples = any(t in research_lower for t in example_terms)
     has_technical_details = any(t in research_lower for t in technical_terms)
-    completeness = min(100.0, (word_count / max(1, ACTIVE_CONFIG.min_word_count)) * 100.0)
+    completeness = min(
+        100.0, (word_count / max(1, ACTIVE_CONFIG.min_word_count)) * 100.0)
 
     depth_score = {
         "word_count": word_count,
@@ -778,23 +792,28 @@ def evaluate_overall_quality_from_state(state: Dict[str, Any]) -> Dict[str, Any]
 
     total_sections = len(depth_scores)
     scores_list = list(depth_scores.values())
-    complete_sections = sum(1 for s in scores_list if s["completeness"] >= ACTIVE_CONFIG.min_completeness)
-    overall_completeness = sum(s["completeness"] for s in scores_list) / total_sections
+    complete_sections = sum(
+        1 for s in scores_list if s["completeness"] >= ACTIVE_CONFIG.min_completeness)
+    overall_completeness = sum(s["completeness"]
+                               for s in scores_list) / total_sections
     avg_word_count = sum(s["word_count"] for s in scores_list) / total_sections
     avg_sources = len(sources) / total_sections if total_sections > 0 else 0
     sections_with_examples = sum(1 for s in scores_list if s["has_examples"])
-    sections_with_technical = sum(1 for s in scores_list if s["has_technical_details"])
+    sections_with_technical = sum(
+        1 for s in scores_list if s["has_technical_details"])
 
     should_continue = False
     reasons = []
 
     if overall_completeness < ACTIVE_CONFIG.min_completeness:
         should_continue = True
-        reasons.append(f"Overall completeness {overall_completeness:.1f}% < {ACTIVE_CONFIG.min_completeness}%")
+        reasons.append(
+            f"Overall completeness {overall_completeness:.1f}% < {ACTIVE_CONFIG.min_completeness}%")
 
     if complete_sections < total_sections:
         should_continue = True
-        reasons.append(f"Only {complete_sections}/{total_sections} sections complete")
+        reasons.append(
+            f"Only {complete_sections}/{total_sections} sections complete")
 
     return {
         "overall_completeness": overall_completeness,
@@ -834,7 +853,8 @@ def generate_markdown_output(callback_context: CallbackContext, **kwargs) -> Non
     """Generate master markdown output document."""
     state = callback_context.state
     curriculum_outline = state.get("curriculum_outline", "")
-    final_report = state.get("final_report_with_citations", "") or state.get("final_cited_report", "")
+    final_report = state.get("final_report_with_citations", "") or state.get(
+        "final_cited_report", "")
     sources = state.get("sources", [])
     depth_scores = state.get("depth_scores", {})
     iteration_count = state.get("iteration_count", 0)
@@ -851,7 +871,8 @@ def generate_markdown_output(callback_context: CallbackContext, **kwargs) -> Non
     ]
 
     if curriculum_outline:
-        toc_lines = [l for l in curriculum_outline.split("\n") if l.strip().startswith(("#", "-", "*")) and len(l.strip()) > 3]
+        toc_lines = [l for l in curriculum_outline.split(
+            "\n") if l.strip().startswith(("#", "-", "*")) and len(l.strip()) > 3]
         parts.extend(f"{l}\n" for l in toc_lines[:20])
 
     parts.extend([
@@ -865,8 +886,6 @@ def generate_markdown_output(callback_context: CallbackContext, **kwargs) -> Non
 
     state["final_markdown_curriculum"] = "".join(parts)
 
-
-# --- Legacy ADK Agents --- #
 
 curriculum_planner = LlmAgent(
     name="curriculum_planner",
@@ -882,12 +901,14 @@ curriculum_planner = LlmAgent(
 section_researcher = LlmAgent(
     name="deep_section_researcher",
     model=model_name,
-    planner=BuiltInPlanner(thinking_config=genai_types.ThinkingConfig(thinkingBudget=thinking_budget)),
+    planner=BuiltInPlanner(thinking_config=genai_types.ThinkingConfig(
+        thinkingBudget=thinking_budget)),
     description="Conducts rigorous, iterative research on curriculum sections with depth tracking.",
     instruction="Conduct rigorous research and cite factual claims with <cite source=\"src-ID\"/>.",
     tools=[google_search] if callable(google_search) else [],
     output_key="section_research",
-    after_model_callback=[research_sources, track_explored_topics, assess_knowledge_depth],
+    after_model_callback=[research_sources,
+                          track_explored_topics, assess_knowledge_depth],
 )
 
 report_synthesizer = LlmAgent(

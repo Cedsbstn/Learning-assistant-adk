@@ -14,7 +14,6 @@ from tests.test_orchestrator import MockLLMProvider, mock_search
 def test_build_parser_subcommands():
     parser = build_parser()
 
-    # 1. research
     args = parser.parse_args(["research", "Python Concurrency", "--preset", "deep", "--auto-approve", "--formats", "markdown,pdf"])
     assert args.command == "research"
     assert args.topic == "Python Concurrency"
@@ -22,23 +21,19 @@ def test_build_parser_subcommands():
     assert args.auto_approve is True
     assert args.formats == "markdown,pdf"
 
-    # 2. resume
     args = parser.parse_args(["resume", "run_12345", "--db", "custom.db"])
     assert args.command == "resume"
     assert args.run_id == "run_12345"
     assert args.db == "custom.db"
 
-    # 3. status
     args = parser.parse_args(["status", "run_12345"])
     assert args.command == "status"
     assert args.run_id == "run_12345"
 
-    # 4. list-runs
     args = parser.parse_args(["list-runs", "--status", "completed"])
     assert args.command == "list-runs"
     assert args.status == "completed"
 
-    # 5. export
     args = parser.parse_args(["export", "run_12345", "--format", "html,pdf"])
     assert args.command == "export"
     assert args.run_id == "run_12345"
@@ -62,11 +57,7 @@ def test_interactive_outline_review_actions(tmp_path):
     run_id = orch.create_run(topic="Operating Systems", config=cfg)
     orch.plan_curriculum(run_id)
 
-    # Sequence of user inputs to test:
-    # 1. '2' -> edit section 1 -> new title 'OS Kernel Architecture' -> keep objs
-    # 2. '6' -> change depth target of section 2 -> '3' (advanced)
-    # 3. '3' -> add section 'Virtual Memory' -> 'Paging, Segmentation' -> 'advanced'
-    # 4. '1' -> approve outline
+    # Edit section 1 title, change section 2 depth to advanced, add section 3, then approve
     inputs = [
         "2", "1", "OS Kernel Architecture", "",
         "6", "2", "3",

@@ -219,6 +219,11 @@ COMPREHENSIVE_RESEARCH = ResearchConfig(
 )
 
 
+def list_preset_names() -> List[str]:
+    """Return available configuration preset names."""
+    return ["quick", "standard", "deep", "comprehensive", "default"]
+
+
 def get_config_by_name(name: str) -> ResearchConfig:
     """Get preset configuration by name."""
     configs = {

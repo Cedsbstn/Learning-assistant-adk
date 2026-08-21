@@ -45,25 +45,20 @@ def test_complete_end_to_end_research_lifecycle(tmp_path):
         output_dir=str(output_dir),
     )
 
-    # 1. Create Run
     run_id = orch.create_run(topic="Distributed Systems Architecture", config=config)
     assert orch.repo.get_run(run_id).status == RunStatus.INITIALIZING
 
-    # 2. Plan Curriculum
     outline = orch.plan_curriculum(run_id)
     assert len(outline.sections) == 2
     assert orch.repo.get_run(run_id).status == RunStatus.OUTLINE_REVIEW
 
-    # 3. Approve Outline with section-level configuration
     orch.approve_outline(run_id)
     assert orch.repo.get_run(run_id).status == RunStatus.RESEARCHING
 
-    # 4. Run Execution Loop
     progress_logs = []
     final_status = orch.run_until_terminal(run_id, on_progress=lambda e: progress_logs.append(e))
     assert final_status == RunStatus.COMPLETED
 
-    # 5. Verify Run State & Database Consistency
     run_record = orch.repo.get_run(run_id)
     assert run_record.status == RunStatus.COMPLETED
     assert run_record.completed_at is not None

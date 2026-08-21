@@ -77,7 +77,7 @@ graph LR
 ---
 
 # Semester 1: The Toolbox (Foundations)
-**Goal:** Master the languages of AI—High-Performance Python & Mathematics.
+**Goal:** Master the languages of AI: High-Performance Python & Mathematics.
 
 ## Module 1: Programming for Data Science
 **Theme:** *Computational Efficiency & Memory Management*

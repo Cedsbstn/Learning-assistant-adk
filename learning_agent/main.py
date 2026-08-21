@@ -37,7 +37,7 @@ from typing import Optional
 
 from agent import ACTIVE_CONFIG, ACTIVE_CONFIG_NAME, core_agent
 from cli import cli_progress_handler, interactive_outline_review
-from config import DEFAULT_CONFIG, ResearchConfig, get_config_by_name, print_config
+from config import DEFAULT_CONFIG, ResearchConfig, get_config_by_name, list_preset_names, print_config
 from models import RunStatus
 from orchestrator import RunOrchestrator
 from tools import create_quick_reference, print_research_summary, save_markdown_curriculum, save_research_metadata
@@ -86,11 +86,6 @@ def handle_interrupt(signum, frame):
 signal.signal(signal.SIGINT, handle_interrupt)
 
 
-# ============================================================================ #
-# Subcommand Handlers
-# ============================================================================ #
-
-
 def cmd_research(args: argparse.Namespace) -> None:
     """Handle 'research' subcommand."""
     global _ACTIVE_ORCHESTRATOR, _ACTIVE_RUN_ID
@@ -121,16 +116,13 @@ def cmd_research(args: argparse.Namespace) -> None:
     orch = RunOrchestrator(db_path=config.database_path)
     _ACTIVE_ORCHESTRATOR = orch
 
-    # 1. Create Run
     run_id = orch.create_run(topic=topic, config=config)
     _ACTIVE_RUN_ID = run_id
     print(f"[RUN] Initialized Run ID: {run_id}")
 
-    # 2. Plan Curriculum
     print("[PLAN] Generating curriculum outline and modular work items...")
     outline = orch.plan_curriculum(run_id)
 
-    # 3. Outline Review
     if config.require_outline_approval:
         approved = interactive_outline_review(orch, run_id, topic, config)
         if not approved:
@@ -139,11 +131,9 @@ def cmd_research(args: argparse.Namespace) -> None:
         print("[INFO] Auto-approving generated outline per configuration.")
         orch.approve_outline(run_id)
 
-    # 4. Run Section Research Loop
     print("\n[LOOP] Starting autonomous iterative research control loop...")
     final_status = orch.run_until_terminal(run_id, on_progress=cli_progress_handler)
 
-    # 5. Display Summary
     _print_completion_summary(orch, run_id)
 
 
@@ -269,11 +259,6 @@ def cmd_export(args: argparse.Namespace) -> None:
         logger.error(f"Export error for run {run_id}: {e}", exc_info=True)
 
 
-# ============================================================================ #
-# Helper Functions
-# ============================================================================ #
-
-
 def _clone_or_load_config(preset_name: Optional[str] = None) -> ResearchConfig:
     """Load configuration from preset or defaults."""
     if preset_name:
@@ -284,28 +269,16 @@ def _clone_or_load_config(preset_name: Optional[str] = None) -> ResearchConfig:
 def _print_completion_summary(orch: RunOrchestrator, run_id: str) -> None:
     """Display final summary and artifact links after run completes."""
     status = orch.get_status(run_id)
-    print("\n" + "=" * 80)
-    print("KYTHE RESEARCH RUN COMPLETE")
-    print("=" * 80)
-    print(f"Run ID: {status['run_id']}")
-    print(f"Topic: {status['topic']}")
+    print(f"\nResearch Run '{run_id}' complete.")
     print(f"Completed Modules: {status['complete_sections']}/{status['total_sections']}")
-    print(f"Total Sources: {status['total_sources']}")
 
     if status.get("artifacts"):
         print("\nExported Artifacts:")
         for a in status["artifacts"]:
             print(f"  - [{a['type'].upper()}]: {a['path']}")
 
-    print("\n" + "=" * 80 + "\n")
 
-
-# ============================================================================ #
-# CLI Parser Setup & Main Entry Point
-# ============================================================================ #
-
-
-def build_parser() -> argparse.ArgumentParser:
+def build_cli_parser() -> argparse.ArgumentParser:
     """Construct argument parser with subcommands and default aliases."""
     parser = argparse.ArgumentParser(
         prog="kythe",
@@ -313,51 +286,52 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
-    # 1. research
-    p_research = subparsers.add_parser("research", help="Start a new autonomous research run")
-    p_research.add_argument("topic", nargs="?", default="", help="Research topic or learning goal")
-    p_research.add_argument("--preset", "-p", choices=["quick", "standard", "deep", "comprehensive"], help="Quality preset")
+    p_research = subparsers.add_parser("research", help="Start a new deep research run")
+    p_research.add_argument("topic", nargs="?", help="Research topic or question")
+    p_research.add_argument("--preset", choices=list_preset_names(), default=None, help="Configuration preset")
     p_research.add_argument("--auto-approve", action="store_true", help="Auto-approve outline without interactive prompt")
-    p_research.add_argument("--formats", help="Comma-separated export formats (markdown,html,pdf,quiz,flashcards)")
+    p_research.add_argument("--formats", default="markdown,html,pdf,quiz,flashcards,metadata", help="Comma-separated export formats")
+    p_research.set_defaults(func=cmd_research)
 
-    # 2. resume
-    p_resume = subparsers.add_parser("resume", help="Resume an interrupted or paused run")
-    p_resume.add_argument("run_id", help="ID of the research run to resume")
-    p_resume.add_argument("--db", default="research.db", help="SQLite database path")
+    p_resume = subparsers.add_parser("resume", help="Resume an interrupted research run")
+    p_resume.add_argument("run_id", help="Run ID to resume")
+    p_resume.add_argument("--db", default=DEFAULT_CONFIG.database_path, help="SQLite database path")
+    p_resume.set_defaults(func=cmd_resume)
 
-    # 3. status
-    p_status = subparsers.add_parser("status", help="Check progress and metrics of a run")
-    p_status.add_argument("run_id", help="ID of the research run to inspect")
-    p_status.add_argument("--db", default="research.db", help="SQLite database path")
+    p_status = subparsers.add_parser("status", help="Inspect status and progress of a run")
+    p_status.add_argument("run_id", help="Run ID to inspect")
+    p_status.add_argument("--db", default=DEFAULT_CONFIG.database_path, help="SQLite database path")
+    p_status.set_defaults(func=cmd_status)
 
-    # 4. list-runs
-    p_list = subparsers.add_parser("list-runs", help="List all research runs")
-    p_list.add_argument("--status", help="Filter by run status (e.g. paused, completed, researching)")
-    p_list.add_argument("--db", default="research.db", help="SQLite database path")
+    p_list = subparsers.add_parser("list-runs", help="List recent research runs")
+    p_list.add_argument("--status", choices=[s.value for s in RunStatus] + [s.value.lower() for s in RunStatus], default=None, help="Filter by run status")
+    p_list.add_argument("--limit", type=int, default=10, help="Maximum runs to display")
+    p_list.add_argument("--db", default=DEFAULT_CONFIG.database_path, help="SQLite database path")
+    p_list.set_defaults(func=cmd_list_runs)
 
-    # 5. export
-    p_export = subparsers.add_parser("export", help="Generate or regenerate export artifacts")
-    p_export.add_argument("run_id", help="ID of the research run to export")
-    p_export.add_argument("--format", help="Comma-separated formats (markdown,html,pdf,quiz,flashcards)")
-    p_export.add_argument("--db", default="research.db", help="SQLite database path")
-
+    p_export = subparsers.add_parser("export", help="Re-export artifacts for a completed run")
+    p_export.add_argument("run_id", help="Run ID to export")
+    p_export.add_argument("--output-dir", default="output", help="Directory for exported artifacts")
+    p_export.add_argument("--formats", "--format", dest="format", default="markdown,html,pdf,quiz,flashcards,metadata", help="Comma-separated export formats")
+    p_export.add_argument("--db", default=DEFAULT_CONFIG.database_path, help="SQLite database path")
+    p_export.set_defaults(func=cmd_export)
     return parser
+
+
+build_parser = build_cli_parser
 
 
 def main() -> None:
     """Main CLI entry point with backwards compatibility support."""
-    parser = build_parser()
+    parser = build_cli_parser()
 
-    # Backwards compatibility: If first arg is not a known subcommand and not a flag, treat as 'research <args>'
     known_commands = {"research", "resume", "status", "list-runs", "export", "-h", "--help"}
     raw_args = sys.argv[1:]
 
     if raw_args and raw_args[0] not in known_commands:
-        # Wrap as research topic
         topic_arg = " ".join(raw_args)
         args = parser.parse_args(["research", topic_arg])
     elif not raw_args:
-        # Interactive default
         args = parser.parse_args(["research", ""])
     else:
         args = parser.parse_args(raw_args)

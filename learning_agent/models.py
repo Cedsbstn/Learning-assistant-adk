@@ -313,8 +313,6 @@ class Artifact:
         )
 
 
-# --- Domain Data Contracts --- #
-
 @dataclass
 class GapSpec:
     """Specification for generating or resolving a gap."""

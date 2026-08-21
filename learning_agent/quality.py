@@ -170,14 +170,14 @@ class QualityEvaluator:
         else:
             target_words = self.config.min_word_count
 
-        # 1. Gate: Minimum detail
+        # Minimum detail check
         if word_count < target_words:
             passed = False
             desc = f"Insufficient word count ({word_count}/{target_words} words for {depth_target} depth)"
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.DETAIL.value, description=desc, severity="critical"))
 
-        # 2. Gate: Per-section evidence (Section-scoped)
+        # Section-scoped source count
         source_count = len(section_sources)
         if source_count < self.config.min_sources:
             passed = False
@@ -185,7 +185,7 @@ class QualityEvaluator:
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.SOURCES.value, description=desc, severity="critical"))
 
-        # 3. Gate: Source diversity (unique domains)
+        # Source diversity across unique domains
         unique_domains = {s.domain for s in section_sources if s.domain}
         domain_count = len(unique_domains)
         if domain_count < self.config.min_unique_domains and source_count >= self.config.min_unique_domains:
@@ -194,7 +194,7 @@ class QualityEvaluator:
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.SOURCES.value, description=desc, severity="normal"))
 
-        # 4. Gate: Examples
+        # Practical examples or code blocks
         draft_lower = draft_text.lower()
         has_code_blocks = len(CODE_BLOCK_PATTERN.findall(draft_text)) > 0
         has_example_terms = any(term in draft_lower for term in EXAMPLE_INDICATORS)
@@ -206,7 +206,7 @@ class QualityEvaluator:
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.EXAMPLES.value, description=desc, severity="normal"))
 
-        # 5. Gate: Technical depth
+        # Technical depth and architectural detail
         has_technical_terms = any(term in draft_lower for term in TECHNICAL_INDICATORS)
         has_headings = len(HEADING_PATTERN.findall(draft_text)) >= 2
         has_technical_details = has_technical_terms or (has_code_blocks and has_headings)
@@ -217,7 +217,7 @@ class QualityEvaluator:
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.TECHNICAL.value, description=desc, severity="normal"))
 
-        # 6. Gate: Citation coverage
+        # Sentence-level citation coverage
         valid_source_ids = {s.source_id.lower() for s in section_sources if s.source_id}
         coverage, cited_units, total_units = calculate_citation_coverage(draft_text, valid_source_ids)
 
@@ -227,7 +227,7 @@ class QualityEvaluator:
             reasons.append(desc)
             gaps.append(GapSpec(category=GapCategory.CITATION.value, description=desc, severity="critical"))
 
-        # 7. Gate: Antislop compliance
+        # Style and antislop filter
         slop_penalty = 0.0
         if getattr(self.config, "enable_antislop", True):
             detected_slop = detect_slop_patterns(draft_text, getattr(self.config, "banned_words", []))
@@ -237,7 +237,7 @@ class QualityEvaluator:
                 reasons.append(desc)
                 gaps.append(GapSpec(category=GapCategory.STYLE.value, description=f"Rewrite without AI slop phrases: {', '.join(detected_slop[:4])}", severity="normal"))
 
-        # Compute composite quality score (0.0 - 100.0)
+        # Composite quality score calculation (0.0 - 100.0)
         score_components = [
             min(1.0, word_count / target_words) * 30.0,
             min(1.0, source_count / max(1, self.config.min_sources)) * 25.0,
