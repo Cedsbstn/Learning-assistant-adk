@@ -310,7 +310,7 @@ if __name__ == "__main__":
     print("\n")
     print("╔═══════════════════════════════════════════════════════════════════════════════╗")
     print("║                                                                               ║")
-    print("║                    CEDLM AUTONOMOUS RESEARCHER v2.0                           ║")
+    print("║                          LEARNING AGENT ADK v2.5                              ║")
     print("║                                                                               ║")
     print("║           Rigorous Iterative Research Until Deep Understanding                ║")
     print("║                                                                               ║")

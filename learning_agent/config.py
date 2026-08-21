@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Configuration module for CedLM Autonomous Researcher.
+Configuration module for the Researcher.
 
 Adjust these parameters to customize research behavior and quality standards.
 """
@@ -106,8 +106,7 @@ class ResearchConfig:
 
 # Default configuration instance
 DEFAULT_CONFIG = ResearchConfig()
-
-
+DB_PATH = "research.db"
 # Preset configurations for different use cases
 
 QUICK_RESEARCH = ResearchConfig(
